@@ -1,0 +1,956 @@
+{
+  "name": "Pracuj.pl",
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -1376,
+        -48
+      ],
+      "id": "e090bf79-4277-4e0e-a47f-1d1a7a480a46",
+      "name": "When clicking ‘Execute workflow’"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "45dba821-8a79-43f7-8783-10bb0e8cc74a",
+              "name": "currentPage",
+              "value": 1,
+              "type": "number"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -64,
+        -48
+      ],
+      "id": "2b3e8344-a77c-439d-87a2-489f16858555",
+      "name": "Start: strona 1"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:3000/content?stealth=true",
+        "sendBody": true,
+        "specifyBody": "=json",
+        "bodyParameters": {
+          "parameters": [
+            {}
+          ]
+        },
+        "jsonBody": "={\n  \"url\": \"https://www.pracuj.pl/praca/wroclaw;wp?rd=20&et=17%2C4%2C18%2C19%2C5%2C20&tc=0%2C3&ws=0&wm=full-office%2Chybrid%2Chome-office&pn={{ $('Następna strona (+1)').isExecuted ? $('Następna strona (+1)').first().json.currentPage : 1 }}\",\n\n  \"gotoOptions\": {\n\n    \"waitUntil\": \"networkidle2\"\n\n  },\n\n  \"waitFor\": 8000\n\n}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "text"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        368,
+        -48
+      ],
+      "id": "2fe65224-edbd-4b49-a142-4c7c08778804",
+      "name": "Pobierz listę z Pracuj.pl"
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst html = items[0].json.data || \"\";\nconst results = [];\n\n// ==========================================\n// KONFIGURACJA\n// ==========================================\nconst MODE = 'BOTH'; \nconst labelA = $('Konfiguracja').first().json.labelA || \"PROFIL A\";\nconst labelB = $('Konfiguracja').first().json.labelB || \"PROFIL B\";\n\n// ==========================================\n// 0. DIAGNOSTYKA WSTĘPNA\n// ==========================================\n// console.log(\"--- START ANALIZY ---\");\n\n// ==========================================\n// 1. BEZPIECZNE POBIERANIE BAZY URL\n// ==========================================\nlet existingUrlsA = [];\nlet existingUrlsB = [];\n\ntry {\n    // Pamiętaj, aby zmienić nazwy tych dwóch węzłów w n8n na \"Baza URL A\" i \"Baza URL B\"\n    const nodeA = $('Baza URL A');\n    const nodeB = $('Baza URL B');\n\n    if (nodeA && nodeA.all()) {\n        existingUrlsA = nodeA.all()\n            .map(i => (i.json.URL || i.json.url || \"\").trim())\n            .filter(u => u.length > 5);\n    }\n    if (nodeB && nodeB.all()) {\n        existingUrlsB = nodeB.all()\n            .map(i => (i.json.URL || i.json.url || \"\").trim())\n            .filter(u => u.length > 5);\n    }\n} catch (e) {}\n\n// ==========================================\n// 2. POBRANIE NUMERU STRONY (z inputu)\n// ==========================================\nlet currentPage = 1;\ntry {\n    if ($node[\"Cloudflare\"] && $node[\"Cloudflare\"].json && $node[\"Cloudflare\"].json.currentPage) {\n        currentPage = parseInt($node[\"Cloudflare\"].json.currentPage);\n    } \n    else if ($input.first().json.currentPage) {\n        currentPage = parseInt($input.first().json.currentPage);\n    }\n} catch (e) { currentPage = 1; }\n\nif (isNaN(currentPage)) currentPage = 1;\n\n// ==========================================\n// 2.5. WERYFIKACJA PAGINACJI (NOWOŚĆ)\n// ==========================================\n// Wyciągamy informacje bezpośrednio z HTML, aby sprawdzić czy nie przekroczyliśmy limitu\nconst maxPageMatch = html.match(/data-test=\"top-pagination-max-page-number\">(\\d+)</);\nconst maxPages = maxPageMatch ? parseInt(maxPageMatch[1]) : 0;\n\nconst currentPageMatch = html.match(/name=\"top-pagination\" value=\"(\\d+)\"/);\n// Jeśli znajdziemy numer w HTML, nadpisujemy ten z inputu dla pewności\nif (currentPageMatch) {\n    currentPage = parseInt(currentPageMatch[1]);\n}\n\n// GŁÓWNY WARUNEK STOPU\n// Jeśli obecna strona > max stron LUB max stron to 0 (błąd/brak wyników)\nif (maxPages > 0 && currentPage > maxPages) {\n    return [{ \n        json: { \n            stopLoop: true, \n            reason: \"END_OF_PAGINATION\", \n            currentPage: currentPage, \n            maxPages: maxPages \n        } \n    }];\n}\n\n// ==========================================\n// SŁOWNIKI\n// ==========================================\nconst PROFIL_A_EXCLUDE = ['java', '.net', 'python', 'php', 'frontend', 'backend', 'fullstack', 'tester', 'qa ', 'cybersecurity', 'devops', 'architect', 'księgow', 'accountant', 'finans', 'tax', 'audyt', 'płac', 'kadry', 'payroll', 'rekrutac', 'sekretariat', 'magazynier', 'kierowca', 'sprzedaw', 'obsługi klienta'];\nconst PIM_TOOLS = ['ergonode', 'akeneo', 'pimcore', 'inriver', 'salsify', 'stibo', 'contentserv', 'omnipharm', 'ks-omnipharm', 'comarch erp', 'cxl'];\nconst AUTO_TOOLS = ['n8n', 'zapier', 'make.com', 'integromat', 'power automate', 'power apps', 'low-code', 'no-code', 'robotyzacja', 'automatyzacja'];\nconst GOLD_PIM = ['pim', 'mdm', 'product information', 'master data', 'kartoteka towarowa'];\nconst STRICT_CONTEXT = ['atrybuty', 'katalog produktów', 'product catalog', 'karta produktu', 'wsad produktowy', 'power query'];\nconst PROFIL_A_ROLES = ['analityk', 'analyst', 'specjalista', 'specialist', 'lead', 'owner', 'manager'];\n\nconst PROFIL_B_EXCLUDE = ['coaching', 'mentoring', 'call center', 'helpdesk', 'infolinia', 'reklamacje', 'customer service', 'support level 1', 'handling tickets', 'młodszy', 'junior', 'asystent', 'praktykant', 'stażysta', 'księgowy', 'accountant', 'kadry', 'payroll', 'sprzedawca', 'kierowca', 'magazynier', 'fizjoterapeuta', 'prawnik'];\nconst PROFIL_B_GOLD_PROCESS = ['workflow', 'governance', 'stakeholder', 'process design', 'standardization', 'transition', 'migration', 'operational excellence', 'lean', 'six sigma', 'change management', 'optymalizacja', 'wdrożenie', 'standardyzacja'];\nconst PROFIL_B_DUTCH = ['niderlandzki', 'dutch'];\nconst PROFIL_B_ROLES = ['lead', 'leader', 'coordinator', 'consultant', 'specialist', 'manager', 'analyst', 'owner', 'ekspert', 'specjalista', 'koordynator', 'lider'];\n\n// Funkcje pomocnicze\nfunction containsAny(text, list) { return list.some(k => text.includes(k.toLowerCase())); }\nfunction cleanSummary(html) {\n    if (!html) return \"Brak\";\n    return html.replace(/<br\\s*[\\/]?>/gi, \"\\n\").replace(/<\\/p>/gi, \"\\n\").replace(/<li>/gi, \"\\n• \").replace(/<[^>]+>/g, \" \").replace(/\\s+/g, \" \").trim();\n}\n\n// ==========================================\n// 3. PARSOWANIE I WALIDACJA JSON\n// ==========================================\n\n// Sprawdzamy czy mamy \"mięso\" (dane JSON wewnątrz HTML)\nlet nextDataRaw = \"\";\ntry {\n  const match = html.match(/<script id=\"__NEXT_DATA__\" type=\"application\\/json\">(.*?)<\\/script>/s);\n  if (match && match[1]) nextDataRaw = match[1];\n} catch (e) {}\n\n// Logika decyzyjna dla błędów serwera/Cloudflare\nif (!nextDataRaw) {\n    if (html.includes(\"Just a moment\") || html.includes(\"Attention Required\")) {\n        return [{ json: { stopLoop: true, error: \"BLOKADA CLOUDFLARE\", currentPage } }];\n    }\n    if (html.includes(\"Too Many Requests\")) {\n        return [{ json: { stopLoop: true, error: \"BLOKADA IP\", currentPage } }];\n    }\n    // Jeśli nie ma JSON i nie ma komunikatu błędu, a maxPages jest 0 (powyżej), to też może być koniec\n    // Ale tutaj zwracamy info o pustej stronie\n    return [{ json: { stopLoop: false, emptyPage: true, currentPage, debug: \"No JSON found\" } }];\n}\n\nconst parsedData = JSON.parse(nextDataRaw);\nlet offersList = [];\nconst queries = parsedData.props?.pageProps?.dehydratedState?.queries || [];\nfor (const query of queries) {\n  if (query.queryKey && query.queryKey.includes(\"jobOffers\") && query.state?.data?.groupedOffers) {\n    offersList = query.state.data.groupedOffers;\n    break; \n  }\n}\n\n// Jeśli JSON jest pusty (0 ofert na liście) -> To też może oznaczać koniec, jeśli logika paginacji zawiodła\nif (offersList.length === 0) {\n    // Dla pewności ustawiamy stopLoop na true, jeśli lista jest pusta, bo nie ma sensu dalej kręcić\n    return [{ json: { stopLoop: true, reason: \"EMPTY_OFFERS_LIST\", currentPage } }];\n}\n\n// ==========================================\n// 4. FILTROWANIE OFERT\n// ==========================================\nfor (const offer of offersList) {\n  const title = (offer.jobTitle || \"\").toLowerCase();\n  const company = offer.companyName || \"\";\n  const url = offer.offers?.[0]?.offerAbsoluteUri || \"\";\n  const description = (offer.jobDescription || \"\").toLowerCase();\n  const summary = offer.aiSummary ? offer.aiSummary.toLowerCase() : \"\";\n  const fullText = title + \" \" + description + \" \" + summary;\n  const offerDetails = offer.offers?.[0] || {};\n\n  const commonData = {\n      \"Data dodania\": new Date().toISOString().split('T')[0],\n      \"Tytuł\": offer.jobTitle, \n      \"Firma\": company, \n      \"Lokalizacja\": offerDetails.displayWorkplace || \"Wrocław\",\n      \"Widełki\": offer.salaryDisplayText || \"Brak widełek\",\n      \"Wymagania i Obowiązki\": cleanSummary(offer.aiSummary),\n      \"URL\": url,\n      \"currentPage\": currentPage,\n      \"stopLoop\": false,\n      \"emptyPage\": false\n  };\n\n  // PROFIL A\n  if (MODE === 'BOTH' || MODE === 'PROFIL_A') {\n      if (!containsAny(title, PROFIL_A_EXCLUDE)) {\n          let matches = [];\n          let kategoria = \"\";\n          let isMatch = false;\n\n          const foundPimTool = PIM_TOOLS.find(k => fullText.includes(k.toLowerCase()));\n          const foundPimGold = GOLD_PIM.find(k => fullText.includes(k.toLowerCase()));\n          const foundAuto = AUTO_TOOLS.find(k => fullText.includes(k.toLowerCase()));\n\n          if (foundPimTool || foundPimGold) { kategoria = \"PIM / Master Data\"; if(foundPimTool) matches.push(`[PIM: ${foundPimTool}]`); isMatch = true; } \n          else if (foundAuto) { kategoria = \"Automatyzacja\"; matches.push(`[AUTO: ${foundAuto}]`); isMatch = true; } \n          else {\n              const role = PROFIL_A_ROLES.find(k => title.includes(k));\n              if (role && containsAny(fullText, STRICT_CONTEXT)) { kategoria = \"Analiza Danych\"; matches.push(\"[Role + Data Context]\"); isMatch = true; }\n          }\n\n          if (isMatch && !existingUrlsA.includes(url)) {\n              results.push({ json: { ...commonData, \"Profil\": labelA, \"Kategoria\": kategoria, \"Dopasowanie\": matches.join(\" \") } });\n          }\n      }\n  }\n\n  // PROFIL B\n  if (MODE === 'BOTH' || MODE === 'PROFIL_B') {\n      if (!containsAny(title, PROFIL_B_EXCLUDE) && !containsAny(description, PROFIL_B_EXCLUDE)) {\n          let matches = [];\n          let kategoria = \"\";\n          let score = 0;\n          let isDutch = false;\n          let isMatch = false;\n\n          const foundRole = PROFIL_B_ROLES.find(k => title.includes(k));\n          if (foundRole) {\n              if (containsAny(fullText, PROFIL_B_DUTCH)) { isDutch = true; matches.push(\"⭐ NIDERLANDZKI\"); score += 50; }\n              PROFIL_B_GOLD_PROCESS.forEach(t => { if(fullText.includes(t)) { score += 20; matches.push(t); } });\n\n              if (isDutch) { kategoria = \"Dutch Asset\"; isMatch = true; }\n              else if (score >= 40) { kategoria = \"Process Excellence\"; isMatch = true; }\n\n              if (isMatch && !existingUrlsB.includes(url)) {\n                  results.push({ json: { ...commonData, \"Profil\": labelB, \"Kategoria\": kategoria, \"Dopasowanie\": matches.join(\", \") } });\n              }\n          }\n      }\n  }\n}\n\nif (results.length === 0) {\n    // Jeśli nie znaleziono ofert pasujących do filtrów, ale strona była OK, to po prostu jedziemy dalej\n    // WAŻNE: Tu stopLoop musi być FALSE, bo po prostu na tej stronie nic nie było dla nas, ale może być na następnej\n    return [{ json: { stopLoop: false, emptyPage: true, currentPage, debugInfo: \"Otrzymano HTML, ale 0 pasujących ofert po filtrach\" } }];\n}\n\nreturn results;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        592,
+        -48
+      ],
+      "id": "013acd1b-3925-4b0b-b826-06f2f7e542b1",
+      "name": "Filtr i Ekstraktor JSON"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "758f9f8a-6b70-44d1-86d1-5bef2d5c2456",
+              "leftValue": "={{ $json.stopLoop }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": "=",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        800,
+        -48
+      ],
+      "id": "b49df5b7-31dd-4acc-be9c-32815bb0e444",
+      "name": "Czy koniec wyników?"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "de8f360f-c58a-4843-b4b8-f5d97207d15e",
+              "leftValue": "={{ $json.emptyPage }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1104,
+        -32
+      ],
+      "id": "90d37e6e-8a8c-4f87-a83c-3b3675894a6d",
+      "name": "Czy pusta strona?"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "40e716dd-4ea8-49d8-9b7e-f3088045f259",
+              "name": "currentPage",
+              "value": "={{ Number($json.currentPage || $('Filtr i Ekstraktor JSON').item.json.currentPage) + 1 }}",
+              "type": "number"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        2032,
+        -48
+      ],
+      "id": "4607ac71-2c87-48c3-8b5b-387968267267",
+      "name": "Następna strona (+1)",
+      "executeOnce": true
+    },
+    {
+      "parameters": {
+        "amount": "={{ 20 + Math.floor(Math.random() * 11) }}"
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        160,
+        -48
+      ],
+      "id": "c3dda762-f454-4972-9eb4-cdd45767b10c",
+      "name": "Cloudflare",
+      "webhookId": "8542a421-18a8-47c4-8748-da0bec237861",
+      "executeOnce": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Czyścimy \"śmieci\" po Merge i startujemy pętlę na czysto\nreturn [\n  {\n    json: {\n      startLoop: true,\n      page: 1\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -256,
+        -48
+      ],
+      "id": "b0fdbaef-734f-47f9-b932-2ecaf50ef2b5",
+      "name": "Code (Reset)"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.Profil }}",
+                    "rightValue": "={{ $('Konfiguracja').first().json.labelA }}",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "c62e29a0-ad86-4707-9f1f-49fe3edf20fc"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": "={{ false }}"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "67949410-02dc-4807-ae0b-1b88b82799e0",
+                    "leftValue": "={{ $json.Profil }}",
+                    "rightValue": "={{ $('Konfiguracja').first().json.labelB }}",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        1264,
+        256
+      ],
+      "id": "e7e82774-2711-48b6-9284-b7a77146642c",
+      "name": "Switch Profil"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        1840,
+        256
+      ],
+      "id": "06c60f68-c302-45c3-b5f9-3a2aeb490692",
+      "name": "Merge Zapisz ofertę",
+      "executeOnce": true
+    },
+    {
+      "parameters": {
+        "mode": "chooseBranch"
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        -464,
+        -48
+      ],
+      "id": "e95cef5c-c45d-457b-928c-b586655ce52b",
+      "name": "Merge Baza URL"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "251eb11d-9b77-41c5-939f-ccaf422ccccc",
+              "name": "sheetId",
+              "value": "TWOJE_ID_ARKUSZA",
+              "type": "string"
+            },
+            {
+              "id": "eafba466-f0c1-4ac2-95f0-8965676f3666",
+              "name": "gid_User_A",
+              "value": "0",
+              "type": "string"
+            },
+            {
+              "id": "7453dd48-3a8c-4911-bd81-7811a8a19911",
+              "name": "gid_User_B",
+              "value": "1620731863",
+              "type": "string"
+            },
+            {
+              "id": "d0dee593-a57e-40dd-b42d-5c95bc70f843",
+              "name": "labelA",
+              "value": "Adam",
+              "type": "string"
+            },
+            {
+              "id": "e7a3876c-c34e-46da-a298-d35b669e523b",
+              "name": "labelB",
+              "value": "Ola",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -1168,
+        -48
+      ],
+      "id": "b1570581-6fd1-4cdb-a87f-18ec15302d59",
+      "name": "Konfiguracja"
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $('Konfiguracja').item.json.sheetId }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "={{ $json.gid_User_A }}",
+          "mode": "id"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        -800,
+        -96
+      ],
+      "id": "c8bae627-1d16-4d39-bf9c-bb307a6719b4",
+      "name": "Baza URL A",
+      "alwaysOutputData": true,
+      "executeOnce": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "Jn7NubGLzPaJwGtq",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $('Konfiguracja').item.json.sheetId }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "={{ $json.gid_User_B }}",
+          "mode": "id"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        -800,
+        64
+      ],
+      "id": "796bd747-d6eb-4733-8ca2-e67c17f8056b",
+      "name": "Baza URL B",
+      "alwaysOutputData": true,
+      "executeOnce": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "Jn7NubGLzPaJwGtq",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $('Konfiguracja').first().json.sheetId }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "={{ $('Konfiguracja').first().json.gid_User_A }}",
+          "mode": "id"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Data dodania": "={{ $json[\"Data dodania\"] }}",
+            "Tytuł": "={{ $json[\"Tytuł\"] }}",
+            "Firma": "={{ $json.Firma }}",
+            "Lokalizacja": "={{ $json.Lokalizacja }}",
+            "Widełki": "={{ $json[\"Widełki\"] }}",
+            "URL": "={{ $json.URL }}",
+            "Wymagania i Obowiązki": "={{ $json['Wymagania i Obowiązki'] }}",
+            "Kategoria": "={{ $json.Kategoria }}",
+            "Dopasowanie": "={{ $json.Dopasowanie }}",
+            "Profil": "={{ $json.Profil }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "Data dodania",
+              "displayName": "Data dodania",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Tytuł",
+              "displayName": "Tytuł",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Firma",
+              "displayName": "Firma",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Widełki",
+              "displayName": "Widełki",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Lokalizacja",
+              "displayName": "Lokalizacja",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Wymagania i Obowiązki",
+              "displayName": "Wymagania i Obowiązki",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "URL",
+              "displayName": "URL",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Kategoria",
+              "displayName": "Kategoria",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Dopasowanie",
+              "displayName": "Dopasowanie",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Profil",
+              "displayName": "Profil",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Status",
+              "displayName": "Status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1552,
+        160
+      ],
+      "id": "a2b482a2-90fe-40e0-a964-07e832a9aa73",
+      "name": "Zapisz ofertę (Profil A)",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "Jn7NubGLzPaJwGtq",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $('Konfiguracja').first().json.sheetId }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "={{ $('Konfiguracja').first().json.gid_User_B }}",
+          "mode": "id"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Data dodania": "={{ $json[\"Data dodania\"] }}",
+            "Tytuł": "={{ $json[\"Tytuł\"] }}",
+            "Firma": "={{ $json.Firma }}",
+            "Lokalizacja": "={{ $json.Lokalizacja }}",
+            "Widełki": "={{ $json[\"Widełki\"] }}",
+            "Wymagania i Obowiązki": "={{ $json[\"Wymagania i Obowiązki\"] }}",
+            "Kategoria": "={{ $json.Kategoria }}",
+            "URL": "={{ $json.URL }}",
+            "Dopasowanie": "={{ $json.Dopasowanie }}",
+            "Profil": "={{ $json.Profil }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "Data dodania",
+              "displayName": "Data dodania",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Tytuł",
+              "displayName": "Tytuł",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Firma",
+              "displayName": "Firma",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Widełki",
+              "displayName": "Widełki",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Lokalizacja",
+              "displayName": "Lokalizacja",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Wymagania i Obowiązki",
+              "displayName": "Wymagania i Obowiązki",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "URL",
+              "displayName": "URL",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Kategoria",
+              "displayName": "Kategoria",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Dopasowanie",
+              "displayName": "Dopasowanie",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Profil",
+              "displayName": "Profil",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Poziom",
+              "displayName": "Poziom",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Tryb",
+              "displayName": "Tryb",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Umowa",
+              "displayName": "Umowa",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Status",
+              "displayName": "Status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1552,
+        368
+      ],
+      "id": "2c271599-fdec-4ae9-9ec5-d10a9b28bd5f",
+      "name": "Zapisz ofertę (Profil B)",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "Jn7NubGLzPaJwGtq",
+          "name": "Google Sheets account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When clicking ‘Execute workflow’": {
+      "main": [
+        [
+          {
+            "node": "Konfiguracja",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Start: strona 1": {
+      "main": [
+        [
+          {
+            "node": "Cloudflare",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pobierz listę z Pracuj.pl": {
+      "main": [
+        [
+          {
+            "node": "Filtr i Ekstraktor JSON",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filtr i Ekstraktor JSON": {
+      "main": [
+        [
+          {
+            "node": "Czy koniec wyników?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Czy koniec wyników?": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Czy pusta strona?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Czy pusta strona?": {
+      "main": [
+        [
+          {
+            "node": "Następna strona (+1)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Switch Profil",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Następna strona (+1)": {
+      "main": [
+        [
+          {
+            "node": "Cloudflare",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cloudflare": {
+      "main": [
+        [
+          {
+            "node": "Pobierz listę z Pracuj.pl",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code (Reset)": {
+      "main": [
+        [
+          {
+            "node": "Start: strona 1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch Profil": {
+      "main": [
+        [
+          {
+            "node": "Zapisz ofertę (Profil A)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Zapisz ofertę (Profil B)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Zapisz ofertę": {
+      "main": [
+        [
+          {
+            "node": "Następna strona (+1)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Baza URL": {
+      "main": [
+        [
+          {
+            "node": "Code (Reset)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Konfiguracja": {
+      "main": [
+        [
+          {
+            "node": "Baza URL A",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Baza URL B",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Baza URL A": {
+      "main": [
+        [
+          {
+            "node": "Merge Baza URL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Baza URL B": {
+      "main": [
+        [
+          {
+            "node": "Merge Baza URL",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Zapisz ofertę (Profil A)": {
+      "main": [
+        [
+          {
+            "node": "Merge Zapisz ofertę",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Zapisz ofertę (Profil B)": {
+      "main": [
+        [
+          {
+            "node": "Merge Zapisz ofertę",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "697c8bbd-cb18-4263-ac29-7f20f94d13af",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "9bb8c4b82344c92c5661d3ab9bbd0361a052cf861779f68d31d55e208c14f224"
+  },
+  "id": "ikpUoS9819KuBXxW",
+  "tags": []
+}
