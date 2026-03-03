@@ -1,0 +1,45 @@
+# ==========================================
+# ZMIENNE ŚRODOWISKOWE (Klucze, hasła)
+# ==========================================
+.env
+.env.*
+!.env.example
+
+# ==========================================
+# SYSTEMOWE PLIKI n8n (Baza danych, pliki)
+# ==========================================
+# Ignorujemy lokalną bazę, bo zawiera zaszyfrowane klucze i historię logów!
+database.sqlite
+.n8n/
+binaryData/
+
+# ==========================================
+# EKSPORTY POŚWIADCZEŃ (Zabezpieczenie)
+# ==========================================
+# Na wypadek, gdybyś przypadkiem wyeksportował workflow z opcją "include credentials"
+*credentials.json
+*secrets.json
+
+# ==========================================
+# LOGI I PLIKI TYMCZASOWE
+# ==========================================
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.tmp/
+.cache/
+
+# ==========================================
+# ZALEŻNOŚCI (Jeśli używasz customowych skryptów)
+# ==========================================
+node_modules/
+
+# ==========================================
+# PLIKI SYSTEMOWE OS / IDE
+# ==========================================
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
